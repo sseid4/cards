@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'db/database_helper.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseHelper.instance.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -20,7 +23,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-
 class Folder {
   final String id;
   final String name;
@@ -37,7 +39,6 @@ class FoldersScreen extends StatefulWidget {
 }
 
 class _FoldersScreenState extends State<FoldersScreen> {
-
   final List<Folder> folders = const [
     Folder(id: '1', name: 'Folder 1'),
     Folder(id: '2', name: 'Folder 2'),
