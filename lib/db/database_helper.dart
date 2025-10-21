@@ -125,6 +125,11 @@ class DatabaseHelper {
 
   // --------- Queries & Mutations ---------
 
+  Future<List<Map<String, dynamic>>> fetchFoldersSimple() async {
+    final db = await database;
+    return db.query('folders', columns: ['id', 'name'], orderBy: 'id ASC');
+  }
+
   Future<List<Map<String, dynamic>>> fetchFolderSummaries() async {
     final db = await database;
     return db.rawQuery('''
@@ -178,12 +183,16 @@ class DatabaseHelper {
     String? name,
     int? rank,
     String? imageUrl,
+    int? folderId,
+    String? suit,
   }) async {
     final db = await database;
     final values = <String, Object?>{};
     if (name != null) values['name'] = name;
     if (rank != null) values['rank'] = rank;
     if (imageUrl != null) values['image_url'] = imageUrl;
+    if (folderId != null) values['folder_id'] = folderId;
+    if (suit != null) values['suit'] = suit;
     if (values.isEmpty) return 0;
     return db.update('cards', values, where: 'id = ?', whereArgs: [id]);
   }
@@ -191,5 +200,30 @@ class DatabaseHelper {
   Future<int> deleteCard(int id) async {
     final db = await database;
     return db.delete('cards', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --------- Folder CRUD (optional bonus) ---------
+
+  Future<int> insertFolder(String name) async {
+    final db = await database;
+    return db.insert('folders', {
+      'name': name,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<int> updateFolderName(int id, String name) async {
+    final db = await database;
+    return db.update(
+      'folders',
+      {'name': name},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> deleteFolder(int id) async {
+    final db = await database;
+    return db.delete('folders', where: 'id = ?', whereArgs: [id]);
   }
 }

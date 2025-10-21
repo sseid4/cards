@@ -100,6 +100,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
           );
         },
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _onAddFolder,
+        child: const Icon(Icons.create_new_folder),
+      ),
     );
   }
 
@@ -120,10 +124,38 @@ class _FoldersScreenState extends State<FoldersScreen> {
           });
         },
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      folder.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'rename') {
+                        _onRenameFolder(folder);
+                      } else if (v == 'delete') {
+                        _onDeleteFolder(folder);
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(value: 'rename', child: Text('Rename')),
+                      PopupMenuItem(value: 'delete', child: Text('Delete')),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
               Expanded(
                 child: AspectRatio(
                   aspectRatio: 3 / 4,
@@ -154,23 +186,108 @@ class _FoldersScreenState extends State<FoldersScreen> {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                folder.name,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '${folder.cardCount} cards',
+                  style: TextStyle(color: Colors.grey.shade600),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${folder.cardCount} cards',
-                style: TextStyle(color: Colors.grey.shade600),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _onAddFolder() async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final ctrl = TextEditingController();
+        return AlertDialog(
+          title: const Text('New Folder'),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              labelText: 'Folder name',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              child: const Text('Create'),
+            ),
+          ],
+        );
+      },
+    );
+    if (name != null && name.isNotEmpty) {
+      await DatabaseHelper.instance.insertFolder(name);
+      setState(() => _foldersFuture = _loadFolders());
+    }
+  }
+
+  Future<void> _onRenameFolder(FolderSummary folder) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final ctrl = TextEditingController(text: folder.name);
+        return AlertDialog(
+          title: const Text('Rename Folder'),
+          content: TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              labelText: 'Folder name',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    if (name != null && name.isNotEmpty && name != folder.name) {
+      await DatabaseHelper.instance.updateFolderName(folder.id, name);
+      setState(() => _foldersFuture = _loadFolders());
+    }
+  }
+
+  Future<void> _onDeleteFolder(FolderSummary folder) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Folder'),
+        content: Text('Delete "${folder.name}" and all its cards?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await DatabaseHelper.instance.deleteFolder(folder.id);
+      setState(() => _foldersFuture = _loadFolders());
+    }
   }
 }
 
@@ -331,18 +448,21 @@ class _CardsScreenState extends State<CardsScreen> {
   }
 
   Future<void> _onAddCard() async {
+    final folders = await DatabaseHelper.instance.fetchFoldersSimple();
     final result = await showDialog<_CardEditResult>(
       context: context,
       builder: (context) => _CardEditDialog(
         title: 'Add Card',
         initialRank: 1,
         initialName: _cardName(widget.folderName, 1),
+        folders: folders,
+        initialFolderId: widget.folderId,
       ),
     );
     if (result != null) {
       await DatabaseHelper.instance.insertCard(
-        folderId: widget.folderId,
-        suit: widget.folderName,
+        folderId: result.folderId,
+        suit: result.folderName,
         rank: result.rank,
         name: result.name.isEmpty ? null : result.name,
       );
@@ -353,21 +473,27 @@ class _CardsScreenState extends State<CardsScreen> {
   Future<void> _onEditCard(Map<String, dynamic> c) async {
     final currentRank = (c['rank'] as num).toInt();
     final currentName = c['name'] as String? ?? '';
+    final folders = await DatabaseHelper.instance.fetchFoldersSimple();
+    final currentFolderId = (c['folder_id'] as num).toInt();
     final result = await showDialog<_CardEditResult>(
       context: context,
       builder: (context) => _CardEditDialog(
         title: 'Edit Card',
         initialRank: currentRank,
         initialName: currentName,
+        folders: folders,
+        initialFolderId: currentFolderId,
       ),
     );
     if (result != null) {
-      final newUrl = _assetPathForCard(widget.folderName, result.rank);
+      final newUrl = _assetPathForCard(result.folderName, result.rank);
       await DatabaseHelper.instance.updateCard(
         id: (c['id'] as num).toInt(),
         name: result.name,
         rank: result.rank,
         imageUrl: newUrl,
+        folderId: result.folderId,
+        suit: result.folderName,
       );
       _reload();
     }
@@ -420,17 +546,23 @@ class _CardsScreenState extends State<CardsScreen> {
 class _CardEditResult {
   final int rank;
   final String name;
-  _CardEditResult(this.rank, this.name);
+  final int folderId;
+  final String folderName;
+  _CardEditResult(this.rank, this.name, this.folderId, this.folderName);
 }
 
 class _CardEditDialog extends StatefulWidget {
   final String title;
   final int initialRank;
   final String initialName;
+  final List<Map<String, dynamic>> folders; // [{id,name}]
+  final int initialFolderId;
   const _CardEditDialog({
     required this.title,
     required this.initialRank,
     required this.initialName,
+    required this.folders,
+    required this.initialFolderId,
   });
 
   @override
@@ -440,12 +572,14 @@ class _CardEditDialog extends StatefulWidget {
 class _CardEditDialogState extends State<_CardEditDialog> {
   late int _rank;
   late TextEditingController _nameCtrl;
+  late int _folderId;
 
   @override
   void initState() {
     super.initState();
     _rank = widget.initialRank;
     _nameCtrl = TextEditingController(text: widget.initialName);
+    _folderId = widget.initialFolderId;
   }
 
   @override
@@ -461,6 +595,26 @@ class _CardEditDialogState extends State<_CardEditDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Row(
+            children: [
+              const Text('Folder:'),
+              const SizedBox(width: 12),
+              DropdownButton<int>(
+                value: _folderId,
+                items: [
+                  for (final f in widget.folders)
+                    DropdownMenuItem(
+                      value: (f['id'] as num).toInt(),
+                      child: Text(f['name'] as String),
+                    ),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => _folderId = v);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               const Text('Rank:'),
@@ -493,10 +647,21 @@ class _CardEditDialogState extends State<_CardEditDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(
-            context,
-            _CardEditResult(_rank, _nameCtrl.text.trim()),
-          ),
+          onPressed: () {
+            final selected = widget.folders.firstWhere(
+              (f) => (f['id'] as num).toInt() == _folderId,
+            );
+            final folderName = selected['name'] as String;
+            Navigator.pop(
+              context,
+              _CardEditResult(
+                _rank,
+                _nameCtrl.text.trim(),
+                _folderId,
+                folderName,
+              ),
+            );
+          },
           child: const Text('Save'),
         ),
       ],
