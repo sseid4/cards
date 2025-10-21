@@ -466,73 +466,119 @@ class _CardsScreenState extends State<CardsScreen> {
   }
 
   Widget _buildCardTile(Map<String, dynamic> c) {
+    final suit = c['suit'] as String? ?? '';
+    final rank = c['rank'] as int? ?? 0;
+
     return Card(
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: c['image_url'] != null
-                ? Image.asset(
-                    c['image_url'] as String,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: Colors.grey.shade200,
-                      child: const Icon(
-                        Icons.image_not_supported,
-                        size: 36,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  )
-                : Container(color: Colors.grey.shade200),
-          ),
-          Positioned(
-            left: 8,
-            right: 8,
-            bottom: 8,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      elevation: 2,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 20),
+                  onSelected: (v) {
+                    if (v == 'edit') {
+                      _onEditCard(c);
+                    } else if (v == 'delete') {
+                      _onDeleteCard(c);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
+              ],
+            ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Expanded(
-                      child: Text(
-                        (c['name'] as String?) ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    Text(
+                      _getRankDisplay(rank),
+                      style: TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.bold,
+                        color: _getSuitColor(suit),
                       ),
                     ),
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.white),
-                      onSelected: (v) {
-                        if (v == 'edit') {
-                          _onEditCard(c);
-                        } else if (v == 'delete') {
-                          _onDeleteCard(c);
-                        }
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
-                      ],
+                    const SizedBox(height: 8),
+                    Text(
+                      _getSuitSymbol(suit),
+                      style: TextStyle(
+                        fontSize: 36,
+                        color: _getSuitColor(suit),
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
-          ),
-        ],
+            Text(
+              (c['name'] as String?) ?? '',
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  String _getRankDisplay(int rank) {
+    switch (rank) {
+      case 1:
+        return 'A';
+      case 11:
+        return 'J';
+      case 12:
+        return 'Q';
+      case 13:
+        return 'K';
+      default:
+        return rank.toString();
+    }
+  }
+
+  String _getSuitSymbol(String suit) {
+    switch (suit.toLowerCase()) {
+      case 'hearts':
+        return '♥';
+      case 'diamonds':
+        return '♦';
+      case 'spades':
+        return '♠';
+      case 'clubs':
+        return '♣';
+      default:
+        return '♠';
+    }
+  }
+
+  Color _getSuitColor(String suit) {
+    switch (suit.toLowerCase()) {
+      case 'hearts':
+      case 'diamonds':
+        return const Color.fromARGB(255, 0, 0, 0);
+      case 'spades':
+      case 'clubs':
+        return Colors.black;
+      default:
+        return Colors.black;
+    }
   }
 
   Future<void> _onAddCard() async {
@@ -608,12 +654,11 @@ class _CardsScreenState extends State<CardsScreen> {
           return;
         }
       }
-      final newUrl = _assetPathForCard(result.folderName, result.rank);
       await DatabaseHelper.instance.updateCard(
         id: (c['id'] as num).toInt(),
         name: result.name,
         rank: result.rank,
-        imageUrl: newUrl,
+        imageUrl: null,
         folderId: result.folderId,
         suit: result.folderName,
       );
@@ -658,10 +703,6 @@ class _CardsScreenState extends State<CardsScreen> {
       default:
         return '$rank of $suit';
     }
-  }
-
-  String _assetPathForCard(String suit, int rank) {
-    return 'assets/images/cards/${suit.toLowerCase()}/$rank.png';
   }
 }
 

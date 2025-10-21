@@ -89,12 +89,11 @@ class DatabaseHelper {
       final folderId = s['id'] as int;
       for (int rank = 1; rank <= 13; rank++) {
         final name = _cardName(suit, rank);
-        final imageUrl = _assetPathForCard(suit, rank);
         batch.insert('cards', {
           'name': name,
           'suit': suit,
           'rank': rank,
-          'image_url': imageUrl,
+          'image_url': null,
           'folder_id': folderId,
         });
       }
@@ -118,11 +117,6 @@ class DatabaseHelper {
     }
   }
 
-  String _assetPathForCard(String suit, int rank) {
-    final folder = suit.toLowerCase();
-    return 'assets/images/cards/$folder/$rank.png';
-  }
-
   // --------- Queries & Mutations ---------
 
   Future<List<Map<String, dynamic>>> fetchFoldersSimple() async {
@@ -132,21 +126,40 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> fetchFolderSummaries() async {
     final db = await database;
-    return db.rawQuery('''
+    final results = await db.rawQuery('''
       SELECT f.id,
              f.name,
-             COUNT(c.id) AS card_count,
-             (
-               SELECT image_url FROM cards
-               WHERE folder_id = f.id
-               ORDER BY rank ASC
-               LIMIT 1
-             ) AS preview_url
+             COUNT(c.id) AS card_count
       FROM folders f
       LEFT JOIN cards c ON c.folder_id = f.id
       GROUP BY f.id, f.name
       ORDER BY f.id ASC;
     ''');
+
+    // Add preview_url based on folder name
+    return results.map((row) {
+      final name = row['name'] as String;
+      String? previewUrl;
+
+      switch (name.toLowerCase()) {
+        case 'hearts':
+          previewUrl = 'assets/images/heart.png';
+          break;
+        case 'spades':
+          previewUrl = 'assets/images/spade.png';
+          break;
+        case 'diamonds':
+          previewUrl = 'assets/images/diamond.png';
+          break;
+        case 'clubs':
+          previewUrl = 'assets/images/club.png';
+          break;
+        default:
+          previewUrl = 'assets/images/suit.png';
+      }
+
+      return {...row, 'preview_url': previewUrl};
+    }).toList();
   }
 
   Future<List<Map<String, dynamic>>> fetchCardsByFolder(int folderId) async {
@@ -178,12 +191,11 @@ class DatabaseHelper {
   }) async {
     final db = await database;
     final cardName = name ?? _cardName(suit, rank);
-    final url = imageUrl ?? _assetPathForCard(suit, rank);
     return db.insert('cards', {
       'name': cardName,
       'suit': suit,
       'rank': rank,
-      'image_url': url,
+      'image_url': imageUrl,
       'folder_id': folderId,
     });
   }
