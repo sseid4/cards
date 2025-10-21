@@ -159,6 +159,16 @@ class DatabaseHelper {
     );
   }
 
+  Future<int> countCardsInFolder(int folderId) async {
+    final db = await database;
+    final res = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM cards WHERE folder_id = ?',
+      [folderId],
+    );
+    final value = res.first['cnt'];
+    return (value as num).toInt();
+  }
+
   Future<int> insertCard({
     required int folderId,
     required String suit,

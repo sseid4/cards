@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart' show DatabaseException;
 import 'db/database_helper.dart';
 
 Future<void> main() async {
@@ -228,8 +229,50 @@ class _FoldersScreenState extends State<FoldersScreen> {
       },
     );
     if (name != null && name.isNotEmpty) {
-      await DatabaseHelper.instance.insertFolder(name);
-      setState(() => _foldersFuture = _loadFolders());
+      try {
+        await DatabaseHelper.instance.insertFolder(name);
+        if (!mounted) return;
+        setState(() {
+          _foldersFuture = _loadFolders();
+        });
+      } on DatabaseException catch (e) {
+        if (!mounted) return;
+        final isUniqueViolation =
+            e.isUniqueConstraintError() ||
+            e.toString().toLowerCase().contains('unique');
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Cannot create folder'),
+            content: Text(
+              isUniqueViolation
+                  ? 'A folder with that name already exists.'
+                  : 'Failed to create folder. ${e.toString()}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Error'),
+            content: Text('Failed to create folder. $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
@@ -262,7 +305,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
     );
     if (name != null && name.isNotEmpty && name != folder.name) {
       await DatabaseHelper.instance.updateFolderName(folder.id, name);
-      setState(() => _foldersFuture = _loadFolders());
+      if (!mounted) return;
+      setState(() {
+        _foldersFuture = _loadFolders();
+      });
     }
   }
 
@@ -286,7 +332,10 @@ class _FoldersScreenState extends State<FoldersScreen> {
     );
     if (confirm == true) {
       await DatabaseHelper.instance.deleteFolder(folder.id);
-      setState(() => _foldersFuture = _loadFolders());
+      if (!mounted) return;
+      setState(() {
+        _foldersFuture = _loadFolders();
+      });
     }
   }
 }
@@ -348,24 +397,63 @@ class _CardsScreenState extends State<CardsScreen> {
                     'No cards yet',
                     style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                   ),
+                  const SizedBox(height: 12),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Text(
+                      'You need at least 3 cards in this folder.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
           }
+          // If fewer than 3 cards, show a warning banner above the grid
+          final needsMinWarning = cards.length < 3;
           return Padding(
             padding: const EdgeInsets.all(12),
-            child: GridView.builder(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 3 / 4,
-              ),
-              itemCount: cards.length,
-              itemBuilder: (context, index) {
-                final c = cards[index];
-                return _buildCardTile(c);
-              },
+            child: Column(
+              children: [
+                if (needsMinWarning)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      border: Border.all(color: Colors.orange),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'You need at least 3 cards in this folder.',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: GridView.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 3 / 4,
+                        ),
+                    itemCount: cards.length,
+                    itemBuilder: (context, index) {
+                      final c = cards[index];
+                      return _buildCardTile(c);
+                    },
+                  ),
+                ),
+              ],
             ),
           );
         },
@@ -449,6 +537,7 @@ class _CardsScreenState extends State<CardsScreen> {
 
   Future<void> _onAddCard() async {
     final folders = await DatabaseHelper.instance.fetchFoldersSimple();
+    if (!context.mounted) return;
     final result = await showDialog<_CardEditResult>(
       context: context,
       builder: (context) => _CardEditDialog(
@@ -460,6 +549,21 @@ class _CardsScreenState extends State<CardsScreen> {
       ),
     );
     if (result != null) {
+      // Enforce max 6 cards per folder
+      final count = await DatabaseHelper.instance.countCardsInFolder(
+        result.folderId,
+      );
+      if (count >= 6) {
+        if (!context.mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (context) => const AlertDialog(
+            title: Text('Limit reached'),
+            content: Text('This folder can only hold 6 cards.'),
+          ),
+        );
+        return;
+      }
       await DatabaseHelper.instance.insertCard(
         folderId: result.folderId,
         suit: result.folderName,
@@ -474,6 +578,7 @@ class _CardsScreenState extends State<CardsScreen> {
     final currentRank = (c['rank'] as num).toInt();
     final currentName = c['name'] as String? ?? '';
     final folders = await DatabaseHelper.instance.fetchFoldersSimple();
+    if (!context.mounted) return;
     final currentFolderId = (c['folder_id'] as num).toInt();
     final result = await showDialog<_CardEditResult>(
       context: context,
@@ -486,6 +591,23 @@ class _CardsScreenState extends State<CardsScreen> {
       ),
     );
     if (result != null) {
+      // If moving to a new folder, enforce max 6 there
+      if (result.folderId != currentFolderId) {
+        final targetCount = await DatabaseHelper.instance.countCardsInFolder(
+          result.folderId,
+        );
+        if (targetCount >= 6) {
+          if (!context.mounted) return;
+          await showDialog<void>(
+            context: context,
+            builder: (context) => const AlertDialog(
+              title: Text('Limit reached'),
+              content: Text('This folder can only hold 6 cards.'),
+            ),
+          );
+          return;
+        }
+      }
       final newUrl = _assetPathForCard(result.folderName, result.rank);
       await DatabaseHelper.instance.updateCard(
         id: (c['id'] as num).toInt(),
