@@ -75,15 +75,11 @@ class DatabaseHelper {
     final batch = db.batch();
 
     for (final s in suitsWithId) {
-      batch.insert(
-        'folders',
-        {
-          'id': s['id'],
-          'name': s['name'],
-          'created_at': now,
-        },
-        conflictAlgorithm: ConflictAlgorithm.ignore,
-      );
+      batch.insert('folders', {
+        'id': s['id'],
+        'name': s['name'],
+        'created_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
 
     // Seed cards: 1-13 for each suit
@@ -125,5 +121,75 @@ class DatabaseHelper {
   String _assetPathForCard(String suit, int rank) {
     final folder = suit.toLowerCase();
     return 'assets/images/cards/$folder/$rank.png';
+  }
+
+  // --------- Queries & Mutations ---------
+
+  Future<List<Map<String, dynamic>>> fetchFolderSummaries() async {
+    final db = await database;
+    return db.rawQuery('''
+      SELECT f.id,
+             f.name,
+             COUNT(c.id) AS card_count,
+             (
+               SELECT image_url FROM cards
+               WHERE folder_id = f.id
+               ORDER BY rank ASC
+               LIMIT 1
+             ) AS preview_url
+      FROM folders f
+      LEFT JOIN cards c ON c.folder_id = f.id
+      GROUP BY f.id, f.name
+      ORDER BY f.id ASC;
+    ''');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCardsByFolder(int folderId) async {
+    final db = await database;
+    return db.query(
+      'cards',
+      where: 'folder_id = ?',
+      whereArgs: [folderId],
+      orderBy: 'rank ASC',
+    );
+  }
+
+  Future<int> insertCard({
+    required int folderId,
+    required String suit,
+    required int rank,
+    String? name,
+    String? imageUrl,
+  }) async {
+    final db = await database;
+    final cardName = name ?? _cardName(suit, rank);
+    final url = imageUrl ?? _assetPathForCard(suit, rank);
+    return db.insert('cards', {
+      'name': cardName,
+      'suit': suit,
+      'rank': rank,
+      'image_url': url,
+      'folder_id': folderId,
+    });
+  }
+
+  Future<int> updateCard({
+    required int id,
+    String? name,
+    int? rank,
+    String? imageUrl,
+  }) async {
+    final db = await database;
+    final values = <String, Object?>{};
+    if (name != null) values['name'] = name;
+    if (rank != null) values['rank'] = rank;
+    if (imageUrl != null) values['image_url'] = imageUrl;
+    if (values.isEmpty) return 0;
+    return db.update('cards', values, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<int> deleteCard(int id) async {
+    final db = await database;
+    return db.delete('cards', where: 'id = ?', whereArgs: [id]);
   }
 }
